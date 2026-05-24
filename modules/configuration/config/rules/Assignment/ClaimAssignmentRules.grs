@@ -1,0 +1,288 @@
+<?xml version="1.0"?>
+<!--
+  ClaimAssignmentRules.grs
+  ==========================
+  Guidewire ClaimCenter — Custom Claim Assignment Rule Set
+
+  Automatically routes incoming claims to the correct adjuster group
+  based on LossType, LossCause, Jurisdiction (State), Reserve threshold,
+  Catastrophe flag, and Represented flag.
+
+  Execution Order: Rules are evaluated top-to-bottom. First matching
+  rule wins (ClaimCenter assignment rules are ordered).
+
+  Compatible: Guidewire ClaimCenter 9.x / 10.x / Cloud (Jasmine+)
+  Author    : Soumya | Senior Guidewire ClaimCenter Developer
+-->
+<RuleSet
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="../../../../../../ruleset.xsd"
+  name="ClaimAssignmentRules"
+  type="Assignment"
+  entitytype="Claim">
+
+  <Description>
+    Production-grade claim assignment rules for ClaimCenter.
+    Routes claims to adjuster groups based on LossType, jurisdiction,
+    severity, catastrophe designation, and legal representation status.
+  </Description>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RULE 1: Catastrophe Claims → CAT Adjusters (Highest Priority)
+       ═══════════════════════════════════════════════════════════════ -->
+  <Rule
+    id="CatastropheClaimAssignment"
+    name="Catastrophe Claims — Assign to CAT Adjusters Team"
+    conditionType="Condition"
+    active="true"
+    priority="1">
+    <Description>
+      Any claim flagged as a catastrophe is immediately routed to the
+      dedicated CAT Adjusters group regardless of LossType or jurisdiction.
+      CAT claims require specialized handling and surge capacity.
+    </Description>
+    <Condition><![CDATA[
+      claim.CatastropheFlag == true
+    ]]></Condition>
+    <AssignmentAction><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      ClaimAssignmentHelper.assignToGroup(claim, "CAT Adjusters")
+      ClaimAssignmentHelper.createAssignmentActivity(claim,
+        "CAT Claim Assigned",
+        "Catastrophe claim " + claim.ClaimNumber + " has been routed to the CAT Adjusters team.",
+        Priority.TC_URGENT)
+    ]]></AssignmentAction>
+  </Rule>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RULE 2: Represented Claimants → Litigation Unit
+       ═══════════════════════════════════════════════════════════════ -->
+  <Rule
+    id="RepresentedClaimantAssignment"
+    name="Represented Claims — Assign to Litigation Unit"
+    conditionType="Condition"
+    active="true"
+    priority="2">
+    <Description>
+      Claims where the claimant is represented by an attorney are routed
+      directly to the Litigation Unit for specialized legal claim handling.
+    </Description>
+    <Condition><![CDATA[
+      claim.RepresentedFlag == true
+      and claim.CatastropheFlag == false
+    ]]></Condition>
+    <AssignmentAction><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      ClaimAssignmentHelper.assignToGroup(claim, "Litigation Unit")
+      ClaimAssignmentHelper.createAssignmentActivity(claim,
+        "Represented Claim — Litigation Unit",
+        "Claim " + claim.ClaimNumber + " has been flagged as represented. Routed to Litigation Unit.",
+        Priority.TC_HIGH)
+    ]]></AssignmentAction>
+  </Rule>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RULE 3: High-Reserve Claims (> $100K) → Senior Adjusters
+       ═══════════════════════════════════════════════════════════════ -->
+  <Rule
+    id="HighReserveClaimAssignment"
+    name="High Reserve Claims (over $100K) — Assign to Senior Adjusters"
+    conditionType="Condition"
+    active="true"
+    priority="3">
+    <Description>
+      Claims with total reserves exceeding $100,000 require senior adjuster
+      oversight due to financial exposure. Applies across all LossTypes.
+    </Description>
+    <Condition><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      ClaimAssignmentHelper.getTotalReserveAmount(claim) > 100000bd
+      and claim.CatastropheFlag == false
+      and claim.RepresentedFlag == false
+    ]]></Condition>
+    <AssignmentAction><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      ClaimAssignmentHelper.assignToGroup(claim, "Senior Adjusters")
+      ClaimAssignmentHelper.createAssignmentActivity(claim,
+        "High Reserve Claim Assigned",
+        "Claim " + claim.ClaimNumber + " has reserves exceeding $100K. Assigned to Senior Adjusters.",
+        Priority.TC_HIGH)
+    ]]></AssignmentAction>
+  </Rule>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RULE 4: Workers Comp Claims → WC Adjusters
+       ═══════════════════════════════════════════════════════════════ -->
+  <Rule
+    id="WorkersCompAssignment"
+    name="Workers Compensation Claims — Assign to WC Adjusters"
+    conditionType="Condition"
+    active="true"
+    priority="4">
+    <Description>
+      All Workers Compensation claims are routed to the dedicated WC
+      Adjusters group. WC claims require jurisdiction-specific expertise
+      and compliance with state-mandated timelines.
+    </Description>
+    <Condition><![CDATA[
+      claim.LossType == typekey.LossType.TC_WC
+      and claim.CatastropheFlag == false
+      and claim.RepresentedFlag == false
+    ]]></Condition>
+    <AssignmentAction><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      ClaimAssignmentHelper.assignToGroupByJurisdiction(claim,
+        "WC Adjusters", claim.JurisdictionState)
+      ClaimAssignmentHelper.createAssignmentActivity(claim,
+        "Workers Comp Claim Assigned",
+        "WC claim " + claim.ClaimNumber + " assigned to WC Adjusters for state: "
+          + (claim.JurisdictionState != null ? claim.JurisdictionState.DisplayName : "Unknown"),
+        Priority.TC_NORMAL)
+    ]]></AssignmentAction>
+  </Rule>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RULE 5: Auto Bodily Injury → BI Adjusters
+       ═══════════════════════════════════════════════════════════════ -->
+  <Rule
+    id="AutoBodilyInjuryAssignment"
+    name="Auto Bodily Injury Claims — Assign to Bodily Injury Adjusters"
+    conditionType="Condition"
+    active="true"
+    priority="5">
+    <Description>
+      Auto bodily injury claims require specialized medical and liability
+      expertise. Routed to the Bodily Injury Adjusters group.
+    </Description>
+    <Condition><![CDATA[
+      claim.LossType == typekey.LossType.TC_AUTOBODILY
+      and claim.CatastropheFlag == false
+      and claim.RepresentedFlag == false
+    ]]></Condition>
+    <AssignmentAction><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      ClaimAssignmentHelper.assignToGroup(claim, "Bodily Injury Adjusters")
+      ClaimAssignmentHelper.createAssignmentActivity(claim,
+        "BI Claim Assigned",
+        "Auto bodily injury claim " + claim.ClaimNumber + " assigned to BI Adjusters.",
+        Priority.TC_NORMAL)
+    ]]></AssignmentAction>
+  </Rule>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RULE 6: Auto Physical Damage → Auto PD Adjusters by State
+       ═══════════════════════════════════════════════════════════════ -->
+  <Rule
+    id="AutoPhysicalDamageAssignment"
+    name="Auto Physical Damage — Assign to Auto PD Adjusters by Jurisdiction"
+    conditionType="Condition"
+    active="true"
+    priority="6">
+    <Description>
+      Auto physical damage claims are routed to state-specific Auto PD
+      adjuster groups to align with regional repair networks and DRP programs.
+    </Description>
+    <Condition><![CDATA[
+      claim.LossType == typekey.LossType.TC_AUTO
+      and claim.CatastropheFlag == false
+      and claim.RepresentedFlag == false
+    ]]></Condition>
+    <AssignmentAction><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      ClaimAssignmentHelper.assignToGroupByJurisdiction(claim,
+        "Auto PD Adjusters", claim.JurisdictionState)
+      ClaimAssignmentHelper.createAssignmentActivity(claim,
+        "Auto PD Claim Assigned",
+        "Auto PD claim " + claim.ClaimNumber + " assigned by jurisdiction: "
+          + (claim.JurisdictionState != null ? claim.JurisdictionState.DisplayName : "Default"),
+        Priority.TC_NORMAL)
+    ]]></AssignmentAction>
+  </Rule>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RULE 7: Property Claims → Property Adjusters
+       ═══════════════════════════════════════════════════════════════ -->
+  <Rule
+    id="PropertyClaimAssignment"
+    name="Property Claims — Assign to Property Adjusters"
+    conditionType="Condition"
+    active="true"
+    priority="7">
+    <Description>
+      Homeowner and commercial property claims are routed to the Property
+      Adjusters group. High-value property claims (over $50K) go to
+      Senior Property Adjusters.
+    </Description>
+    <Condition><![CDATA[
+      claim.LossType == typekey.LossType.TC_PR
+      and claim.CatastropheFlag == false
+    ]]></Condition>
+    <AssignmentAction><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      var totalReserve = ClaimAssignmentHelper.getTotalReserveAmount(claim)
+      if (totalReserve > 50000bd) {
+        ClaimAssignmentHelper.assignToGroup(claim, "Senior Property Adjusters")
+      } else {
+        ClaimAssignmentHelper.assignToGroup(claim, "Property Adjusters")
+      }
+      ClaimAssignmentHelper.createAssignmentActivity(claim,
+        "Property Claim Assigned",
+        "Property claim " + claim.ClaimNumber + " assigned. Reserve: $" + totalReserve,
+        Priority.TC_NORMAL)
+    ]]></AssignmentAction>
+  </Rule>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RULE 8: General Liability → GL Adjusters
+       ═══════════════════════════════════════════════════════════════ -->
+  <Rule
+    id="GeneralLiabilityAssignment"
+    name="General Liability Claims — Assign to GL Adjusters"
+    conditionType="Condition"
+    active="true"
+    priority="8">
+    <Description>
+      General liability claims involving third-party injury or property
+      damage are handled by the General Liability Adjusters group.
+    </Description>
+    <Condition><![CDATA[
+      claim.LossType == typekey.LossType.TC_GL
+      and claim.CatastropheFlag == false
+    ]]></Condition>
+    <AssignmentAction><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      ClaimAssignmentHelper.assignToGroup(claim, "GL Adjusters")
+      ClaimAssignmentHelper.createAssignmentActivity(claim,
+        "GL Claim Assigned",
+        "General liability claim " + claim.ClaimNumber + " assigned to GL Adjusters.",
+        Priority.TC_NORMAL)
+    ]]></AssignmentAction>
+  </Rule>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       RULE 9: Default Fallback → General Adjusters
+       ═══════════════════════════════════════════════════════════════ -->
+  <Rule
+    id="DefaultAssignment"
+    name="Default Fallback — Assign to General Adjusters"
+    conditionType="Condition"
+    active="true"
+    priority="99">
+    <Description>
+      Catch-all rule for claims that do not match any specific routing rule.
+      Assigns to General Adjusters for manual review and re-routing.
+    </Description>
+    <Condition><![CDATA[
+      claim.AssignedGroup == null
+    ]]></Condition>
+    <AssignmentAction><![CDATA[
+      uses gw.assignment.ClaimAssignmentHelper
+      ClaimAssignmentHelper.assignToGroup(claim, "General Adjusters")
+      ClaimAssignmentHelper.createAssignmentActivity(claim,
+        "Claim Assigned — Pending Review",
+        "Claim " + claim.ClaimNumber + " could not be auto-routed. Assigned to General Adjusters for review.",
+        Priority.TC_NORMAL)
+    ]]></AssignmentAction>
+  </Rule>
+
+</RuleSet>

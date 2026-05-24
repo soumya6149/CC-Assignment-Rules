@@ -1,0 +1,77 @@
+<?xml version="1.0"?>
+<!--
+  ClaimAssignmentValidationRules.grs
+  =====================================
+  Validation rules that enforce assignment integrity in ClaimCenter.
+  Runs on claim save to ensure every open claim has a valid assignment.
+
+  Compatible: Guidewire ClaimCenter 9.x / 10.x / Cloud (Jasmine+)
+  Author    : Soumya | Senior Guidewire ClaimCenter Developer
+-->
+<RuleSet
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:noNamespaceSchemaLocation="../../../../../../ruleset.xsd"
+  name="ClaimAssignmentValidationRules"
+  type="Validation"
+  entitytype="Claim">
+
+  <Description>
+    Validates that open claims are properly assigned and that
+    CAT and high-reserve claims have appropriate escalation flags.
+  </Description>
+
+  <!-- Rule 1: Open claim must have an assigned group -->
+  <Rule
+    id="OpenClaimMustBeAssigned"
+    name="Open Claim Must Have Assigned Group"
+    conditionType="Condition"
+    severity="Warning"
+    active="true">
+    <Description>Warns if an open claim has no assigned group.</Description>
+    <Condition><![CDATA[
+      claim.State == ClaimState.TC_OPEN
+      and claim.AssignedGroup == null
+    ]]></Condition>
+    <Message><![CDATA[
+      DisplayKey.get("Web.Assignment.Validation.NoGroupAssigned", claim.ClaimNumber)
+    ]]></Message>
+  </Rule>
+
+  <!-- Rule 2: CAT claims must be assigned to CAT Adjusters -->
+  <Rule
+    id="CATClaimMustBeAssignedToCATGroup"
+    name="CAT Claims Must Be Assigned to CAT Adjusters"
+    conditionType="Condition"
+    severity="Error"
+    active="true">
+    <Description>Blocks close/submit if a CAT claim is not with the CAT Adjusters group.</Description>
+    <Condition><![CDATA[
+      claim.CatastropheFlag == true
+      and claim.AssignedGroup != null
+      and claim.AssignedGroup.Name != "CAT Adjusters"
+      and claim.State == ClaimState.TC_OPEN
+    ]]></Condition>
+    <Message><![CDATA[
+      DisplayKey.get("Web.Assignment.Validation.CATClaimWrongGroup")
+    ]]></Message>
+  </Rule>
+
+  <!-- Rule 3: Represented claims must not be in non-litigation groups -->
+  <Rule
+    id="RepresentedClaimMustBeInLitigationUnit"
+    name="Represented Claims Must Be In Litigation Unit"
+    conditionType="Condition"
+    severity="Warning"
+    active="true">
+    <Description>Warns if a represented claim is assigned outside the Litigation Unit.</Description>
+    <Condition><![CDATA[
+      claim.RepresentedFlag == true
+      and claim.AssignedGroup != null
+      and claim.AssignedGroup.Name != "Litigation Unit"
+    ]]></Condition>
+    <Message><![CDATA[
+      DisplayKey.get("Web.Assignment.Validation.RepresentedClaimWrongGroup")
+    ]]></Message>
+  </Rule>
+
+</RuleSet>
