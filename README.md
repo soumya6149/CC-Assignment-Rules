@@ -7,9 +7,7 @@
 
 ---
 
-A **production-grade Guidewire ClaimCenter customization** implementing automated
-claim routing via the ClaimCenter Assignment Rules Engine, Gosu helper/service classes,
-validation rules, and a comprehensive CCTestBase unit test suite.
+A Guidewire ClaimCenter customization implementing automated claim routing via the ClaimCenter Assignment Rules Engine, Gosu helper/service classes, validation rules, and a comprehensive CCTestBase unit test suite.
 
 ---
 
@@ -193,3 +191,9 @@ Run in Guidewire Studio:
 
 **Soumya** — Senior Guidewire ClaimCenter Developer
 🔗 [LinkedIn](https://linkedin.com/in/soumya6149) | 💻 [GitHub](https://github.com/soumya6149)
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
